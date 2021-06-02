@@ -3,6 +3,8 @@ package squad
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -72,6 +74,37 @@ type SquadOption func(*Squad)
 func WithSignalHandler() SquadOption {
 	return func(squad *Squad) {
 		squad.funcs = append(squad.funcs, handleSignals)
+	}
+}
+
+// WithHealthHandler is a Squad option that adds health handling
+// goroutine to the squad. This goroutine launches the health http server,
+// which, if the squad stops working, will be a signal to external services.
+func WithHealthHandler(port int) SquadOption {
+	return func(squad *Squad) {
+		squad.funcs = append(squad.funcs, healthHandler(port))
+	}
+}
+
+func healthHandler(port int) func(context.Context) error {
+	router := http.NewServeMux()
+	// empty handler default return 200 OK.
+	router.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: router,
+	}
+
+	return func(ctx context.Context) (err error) {
+		go srv.ListenAndServe()
+
+		select {
+		case <-ctx.Done():
+			if err = srv.Shutdown(ctx); err == http.ErrServerClosed {
+				err = nil
+			}
+		}
+		return nil
 	}
 }
 
