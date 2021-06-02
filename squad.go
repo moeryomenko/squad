@@ -17,6 +17,7 @@ type Squad struct {
 	wg     sync.WaitGroup
 	ctx    context.Context
 	cancel func()
+	mtx    sync.Mutex
 
 	funcs []func(ctx context.Context) error
 	errs  []error
@@ -33,7 +34,9 @@ func (s *Squad) Run(fn func(context.Context) error) {
 		}()
 
 		if err := fn(s.ctx); err != nil {
+			s.mtx.Lock()
 			s.errs = append(s.errs, err)
+			s.mtx.Unlock()
 		}
 	}()
 }
