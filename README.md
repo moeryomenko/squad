@@ -30,4 +30,4 @@ func main() {
 
 Squad is primarily distributed under the terms of both the MIT license and the Apache License (Version 2.0).
 
-See LICENSE-APACHE and/or LICENSE-MIT for details.
+See [LICENSE-APACHE](LICENSE-APACHE) and/or [LICENSE-MIT](LICENSE-MIT) for details.
