@@ -13,7 +13,8 @@ import (
 func main() {
 	s := squad.NewSquad(context.Background(),
 		squad.WithHealthHandler(5000),
-		squad.WithSignalHandler())
+		squad.WithSignalHandler(),
+		squad.WithProfileHandler(6000))
 
 	s.Wait()
 }

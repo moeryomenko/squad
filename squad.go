@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // Squad is a collection of goroutines that go up and running altogether.
@@ -89,6 +91,14 @@ func WithHealthHandler(port int) SquadOption {
 	}
 }
 
+// WithProfileHandler is a Squad option that adds pprof handling
+// goroutine to squad. This goroutine launches the http/pprof server.
+func WithProfileHandler(port int) SquadOption {
+	return func(squad *Squad) {
+		squad.funcs = append(squad.funcs, profileHandler(port))
+	}
+}
+
 func healthHandler(port int) func(context.Context) error {
 	router := http.NewServeMux()
 	// empty handler default return 200 OK.
@@ -98,17 +108,22 @@ func healthHandler(port int) func(context.Context) error {
 		Handler: router,
 	}
 
-	return func(ctx context.Context) (err error) {
-		go srv.ListenAndServe()
+	return serverLauncher(srv)
+}
 
-		select {
-		case <-ctx.Done():
-			if err = srv.Shutdown(ctx); err == http.ErrServerClosed {
-				err = nil
-			}
-		}
-		return nil
+func profileHandler(port int) func(context.Context) error {
+	router := http.NewServeMux()
+	router.HandleFunc("/debug/pprof/", pprof.Index)
+	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: router,
 	}
+
+	return serverLauncher(srv)
 }
 
 func handleSignals(ctx context.Context) error {
@@ -122,4 +137,18 @@ func handleSignals(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func serverLauncher(srv *http.Server) func(context.Context) error {
+	return func(ctx context.Context) (err error) {
+		go srv.ListenAndServe()
+
+		<-ctx.Done()
+		ctx, _ = context.WithTimeout(context.Background(), 1*time.Second)
+		if err = srv.Shutdown(ctx); err == http.ErrServerClosed {
+			return nil
+		}
+
+		return
+	}
 }
