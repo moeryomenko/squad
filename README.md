@@ -1,4 +1,4 @@
-# Squad
+# Squad [![Go Reference](https://pkg.go.dev/badge/github.com/moeryomenko/squad.svg)](https://pkg.go.dev/github.com/moeryomenko/squad)
 
 Squad is package contains a shared shutdown primitive.
 
