@@ -144,7 +144,8 @@ func serverLauncher(srv *http.Server) func(context.Context) error {
 		go srv.ListenAndServe()
 
 		<-ctx.Done()
-		ctx, _ = context.WithTimeout(context.Background(), 1*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
 		if err = srv.Shutdown(ctx); err == http.ErrServerClosed {
 			return nil
 		}
