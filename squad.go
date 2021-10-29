@@ -9,9 +9,10 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
+
+	"github.com/moeryomenko/synx"
 )
 
 const defaultCancellationDelay = 2 * time.Second
@@ -20,7 +21,7 @@ const defaultCancellationDelay = 2 * time.Second
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
 	// primitives for control running goroutines.
-	wg     sync.WaitGroup
+	wg     *synx.WaitGroup
 	ctx    context.Context
 	cancel func()
 	funcs  []func(ctx context.Context) error
@@ -30,7 +31,7 @@ type Squad struct {
 	cancellationFuncs []func(ctx context.Context) error
 
 	// guarded errors.
-	mtx  sync.Mutex
+	mtx  synx.Spinlock
 	errs []error
 }
 
@@ -94,7 +95,7 @@ func (s *Squad) shutdown() {
 func NewSquad(ctx context.Context, opts ...SquadOption) *Squad {
 	ctx, cancel := context.WithCancel(ctx)
 	squad := &Squad{
-		wg:                sync.WaitGroup{},
+		wg:                synx.NewWaitGroup(),
 		ctx:               ctx,
 		cancel:            cancel,
 		cancellationDelay: defaultCancellationDelay,
