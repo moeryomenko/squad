@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/moeryomenko/synx"
+	"golang.org/x/sync/errgroup"
 )
 
 const defaultCancellationDelay = 2 * time.Second
@@ -29,6 +30,9 @@ type Squad struct {
 	// primitives for control goroutines shutdowning.
 	cancellationDelay time.Duration
 	cancellationFuncs []func(ctx context.Context) error
+
+	// bootstrap functions.
+	bootstraps []func(context.Context) error
 
 	// guarded errors.
 	mtx  synx.Spinlock
@@ -92,7 +96,7 @@ func (s *Squad) shutdown() {
 }
 
 // NewSquad returns a new Squad with the context.
-func NewSquad(ctx context.Context, opts ...SquadOption) *Squad {
+func NewSquad(ctx context.Context, opts ...SquadOption) (*Squad, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	squad := &Squad{
 		wg:                synx.NewWaitGroup(),
@@ -103,6 +107,17 @@ func NewSquad(ctx context.Context, opts ...SquadOption) *Squad {
 
 	for _, opt := range opts {
 		opt(squad)
+	}
+
+	group, bootstrapCtx := errgroup.WithContext(ctx)
+	for _, fn := range squad.bootstraps {
+		fn := fn
+		group.Go(func() error { return fn(bootstrapCtx) })
+	}
+
+	err := group.Wait()
+	if err != nil {
+		return nil, err
 	}
 
 	for _, f := range squad.funcs {
@@ -120,7 +135,7 @@ func NewSquad(ctx context.Context, opts ...SquadOption) *Squad {
 		}
 	}()
 
-	return squad
+	return squad, nil
 }
 
 // SquadOption is an option that can be applied to Squad.
@@ -140,6 +155,22 @@ func WithShutdownDelay(t time.Duration) SquadOption {
 func WithSignalHandler() SquadOption {
 	return func(squad *Squad) {
 		squad.funcs = append(squad.funcs, handleSignals)
+	}
+}
+
+// WithBootstrap is a Squad option that adds bootstrap funcitons,
+// which will be executed before squad started.
+func WithBootstrap(fns ...func(context.Context) error) SquadOption {
+	return func(s *Squad) {
+		s.bootstraps = fns
+	}
+}
+
+// WithCloses is a Squad options that adds cleanup functions,
+// which will be executed after squad stopped.
+func WithCloses(fns ...func(context.Context) error) SquadOption {
+	return func(s *Squad) {
+		s.cancellationFuncs = append(s.cancellationFuncs, fns...)
 	}
 }
 

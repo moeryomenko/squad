@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/moeryomenko/squad"
@@ -13,10 +14,12 @@ import (
 // healthchecker and signal handler, which will provide
 // graceful shutdown service.
 func main() {
-	s := squad.NewSquad(context.Background(),
-		squad.WithHealthHandler(5000),
+	s, err := squad.NewSquad(context.Background(),
 		squad.WithSignalHandler(),
 		squad.WithProfileHandler(6000))
+	if err != nil {
+		log.Fatalf("service could not start, reason: %v", err)
+	}
 
 	s.RunGracefully(func(_ context.Context) error {
 		return nil
