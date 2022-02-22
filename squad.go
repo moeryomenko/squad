@@ -174,17 +174,6 @@ func WithCloses(fns ...func(context.Context) error) SquadOption {
 	}
 }
 
-// WithHealthHandler is a Squad option that adds health handling
-// goroutine to the squad. This goroutine launches the health http server,
-// which, if the squad stops working, will be a signal to external services.
-func WithHealthHandler(port int) SquadOption {
-	return func(squad *Squad) {
-		runFn, onDownFn := healthHandler(port)
-		squad.funcs = append(squad.funcs, runFn)
-		squad.cancellationFuncs = append(squad.cancellationFuncs, onDownFn)
-	}
-}
-
 // WithProfileHandler is a Squad option that adds pprof handling
 // goroutine to squad. This goroutine launches the http/pprof server.
 func WithProfileHandler(port int) SquadOption {
@@ -193,19 +182,6 @@ func WithProfileHandler(port int) SquadOption {
 		squad.funcs = append(squad.funcs, runFn)
 		squad.cancellationFuncs = append(squad.cancellationFuncs, onDownFn)
 	}
-}
-
-func healthHandler(port int) (func(context.Context) error, func(context.Context) error) {
-	router := http.NewServeMux()
-	// empty handler default return 200 OK.
-	router.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: router,
-	}
-	return func(_ context.Context) error {
-		return srv.ListenAndServe()
-	}, shutdownServer(srv)
 }
 
 func profileHandler(port int) (func(context.Context) error, func(context.Context) error) {
