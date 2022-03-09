@@ -3,26 +3,17 @@ package squad
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"net/http"
-	"net/http/pprof"
-	"os"
-	"os/signal"
-	"syscall"
+	"sync"
 	"time"
 
-	"github.com/moeryomenko/synx"
 	"golang.org/x/sync/errgroup"
 )
-
-const defaultCancellationDelay = 2 * time.Second
 
 // Squad is a collection of goroutines that go up and running altogether.
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
 	// primitives for control running goroutines.
-	wg     *synx.WaitGroup
+	wg     sync.WaitGroup
 	ctx    context.Context
 	cancel func()
 	funcs  []func(ctx context.Context) error
@@ -35,30 +26,33 @@ type Squad struct {
 	bootstraps []func(context.Context) error
 
 	// guarded errors.
-	mtx  synx.Spinlock
+	mtx  sync.Mutex
 	errs []error
 }
+
+const defaultCancellationDelay = 2 * time.Second
 
 // Run runs the fn. When fn is done, it signals all the group members to stop.
 func (s *Squad) Run(fn func(context.Context) error) {
 	s.RunGracefully(fn, nil)
 }
 
-// RunGracefully runs the fn. When fn is done, it signals all group members to stop.
+// RunGracefully runs the backgroudFn. When fn is done, it signals all group members to stop.
 // When stop signal has been received, squad run onDown function.
-func (s *Squad) RunGracefully(fn func(context.Context) error, onDown func(context.Context) error) {
+func (s *Squad) RunGracefully(backgroudFn func(context.Context) error, onDown func(context.Context) error) {
 	if onDown != nil {
 		s.cancellationFuncs = append(s.cancellationFuncs, onDown)
 	}
 
 	s.wg.Add(1)
+
 	go func() {
 		defer func() {
 			s.cancel()
 			s.wg.Done()
 		}()
 
-		if err := fn(s.ctx); err != nil {
+		if err := backgroudFn(s.ctx); err != nil {
 			s.appendErr(err)
 		}
 	}()
@@ -77,29 +71,21 @@ func (s *Squad) appendErr(err error) {
 	s.mtx.Unlock()
 }
 
-func (s *Squad) shutdown() {
-	cancellationContext, cancel := context.WithTimeout(context.Background(), s.cancellationDelay)
-	defer cancel()
-
+func (s *Squad) shutdown(ctx context.Context) {
 	for _, cancelFn := range s.cancellationFuncs {
 		go func(cancelFn func(ctx context.Context) error) {
-			err := cancelFn(cancellationContext)
+			err := cancelFn(ctx)
 			if err != nil {
 				s.appendErr(err)
 			}
 		}(cancelFn)
 	}
-
-	<-cancellationContext.Done()
-
-	return
 }
 
 // NewSquad returns a new Squad with the context.
-func NewSquad(ctx context.Context, opts ...SquadOption) (*Squad, error) {
+func NewSquad(ctx context.Context, opts ...Option) (*Squad, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	squad := &Squad{
-		wg:                synx.NewWaitGroup(),
 		ctx:               ctx,
 		cancel:            cancel,
 		cancellationDelay: defaultCancellationDelay,
@@ -112,6 +98,7 @@ func NewSquad(ctx context.Context, opts ...SquadOption) (*Squad, error) {
 	group, bootstrapCtx := errgroup.WithContext(ctx)
 	for _, fn := range squad.bootstraps {
 		fn := fn
+
 		group.Go(func() error { return fn(bootstrapCtx) })
 	}
 
@@ -130,96 +117,16 @@ func NewSquad(ctx context.Context, opts ...SquadOption) (*Squad, error) {
 		defer squad.wg.Done()
 
 		<-ctx.Done()
+
+		ctx, cancel := context.WithTimeout(context.Background(), squad.cancellationDelay)
+		defer cancel()
+
 		if squad.cancellationFuncs != nil {
-			squad.shutdown()
+			squad.shutdown(ctx)
 		}
+
+		<-ctx.Done()
 	}()
 
 	return squad, nil
-}
-
-// SquadOption is an option that can be applied to Squad.
-type SquadOption func(*Squad)
-
-// WithShutdownDelay sets time for cancellation timeout.
-// Default timeout is 2 seconds.
-func WithShutdownDelay(t time.Duration) SquadOption {
-	return func(squad *Squad) {
-		squad.cancellationDelay = t
-	}
-}
-
-// WithSignalHandler is a Squad option that adds signal handling
-// goroutine to the squad. This goroutine will exit on SIGINT or SIGTERM
-// or SIGQUIT and trigger cancellation of the whole squad.
-func WithSignalHandler() SquadOption {
-	return func(squad *Squad) {
-		squad.funcs = append(squad.funcs, handleSignals)
-	}
-}
-
-// WithBootstrap is a Squad option that adds bootstrap funcitons,
-// which will be executed before squad started.
-func WithBootstrap(fns ...func(context.Context) error) SquadOption {
-	return func(s *Squad) {
-		s.bootstraps = fns
-	}
-}
-
-// WithCloses is a Squad options that adds cleanup functions,
-// which will be executed after squad stopped.
-func WithCloses(fns ...func(context.Context) error) SquadOption {
-	return func(s *Squad) {
-		s.cancellationFuncs = append(s.cancellationFuncs, fns...)
-	}
-}
-
-// WithProfileHandler is a Squad option that adds pprof handling
-// goroutine to squad. This goroutine launches the http/pprof server.
-func WithProfileHandler(port int) SquadOption {
-	return func(squad *Squad) {
-		runFn, onDownFn := profileHandler(port)
-		squad.funcs = append(squad.funcs, runFn)
-		squad.cancellationFuncs = append(squad.cancellationFuncs, onDownFn)
-	}
-}
-
-func profileHandler(port int) (func(context.Context) error, func(context.Context) error) {
-	router := http.NewServeMux()
-	router.HandleFunc("/debug/pprof/", pprof.Index)
-	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: router,
-	}
-
-	return func(_ context.Context) error {
-		return srv.ListenAndServe()
-	}, shutdownServer(srv)
-}
-
-func handleSignals(ctx context.Context) error {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	defer signal.Stop(sigs)
-
-	select {
-	case <-sigs:
-	case <-ctx.Done():
-	}
-
-	return nil
-}
-
-func shutdownServer(srv *http.Server) func(context.Context) error {
-	return func(ctx context.Context) error {
-		if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-
-		return nil
-	}
 }
