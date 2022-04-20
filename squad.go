@@ -39,7 +39,7 @@ func (s *Squad) Run(fn func(context.Context) error) {
 
 // RunGracefully runs the backgroudFn. When fn is done, it signals all group members to stop.
 // When stop signal has been received, squad run onDown function.
-func (s *Squad) RunGracefully(backgroudFn func(context.Context) error, onDown func(context.Context) error) {
+func (s *Squad) RunGracefully(backgroudFn, onDown func(context.Context) error) {
 	if onDown != nil {
 		s.cancellationFuncs = append(s.cancellationFuncs, onDown)
 	}
@@ -72,14 +72,32 @@ func (s *Squad) appendErr(err error) {
 }
 
 func (s *Squad) shutdown(ctx context.Context) {
+	s.wg.Add(len(s.cancellationFuncs))
 	for _, cancelFn := range s.cancellationFuncs {
 		go func(cancelFn func(ctx context.Context) error) {
-			err := cancelFn(ctx)
+			defer s.wg.Done()
+
+			var err error
+			select {
+			case <-ctx.Done():
+				return
+			case err = <-callTimeout(ctx, cancelFn):
+			}
 			if err != nil {
 				s.appendErr(err)
 			}
 		}(cancelFn)
 	}
+}
+
+func callTimeout(ctx context.Context, fn func(context.Context) error) chan error {
+	ch := make(chan error, 1)
+
+	go func() {
+		ch <- fn(ctx)
+	}()
+
+	return ch
 }
 
 // NewSquad returns a new Squad with the context.
@@ -95,15 +113,7 @@ func NewSquad(ctx context.Context, opts ...Option) (*Squad, error) {
 		opt(squad)
 	}
 
-	group, bootstrapCtx := errgroup.WithContext(ctx)
-	for _, fn := range squad.bootstraps {
-		fn := fn
-
-		group.Go(func() error { return fn(bootstrapCtx) })
-	}
-
-	err := group.Wait()
-	if err != nil {
+	if err := onStart(ctx, squad.bootstraps...); err != nil {
 		return nil, err
 	}
 
@@ -129,4 +139,26 @@ func NewSquad(ctx context.Context, opts ...Option) (*Squad, error) {
 	}()
 
 	return squad, nil
+}
+
+func onStart(ctx context.Context, bootstraps ...func(context.Context) error) error {
+	if len(bootstraps) == 0 {
+		return nil
+	}
+
+	group, bootstrapCtx := errgroup.WithContext(ctx)
+	for _, fn := range bootstraps {
+		fn := fn
+		if fn == nil {
+			continue
+		}
+
+		group.Go(func() error { return fn(bootstrapCtx) })
+	}
+
+	err := group.Wait()
+	if err != nil {
+		return err
+	}
+	return nil
 }
