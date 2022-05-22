@@ -23,6 +23,12 @@ func WithShutdownDelay(t time.Duration) Option {
 	}
 }
 
+func WithGraceful(period time.Duration) Option {
+	return func(squad *Squad) {
+		squad.gracefulPeriod = period
+	}
+}
+
 // WithSignalHandler is a Squad option that adds signal handling
 // goroutine to the squad. This goroutine will exit on SIGINT or SIGTERM
 // or SIGQUIT and trigger cancellation of the whole squad.

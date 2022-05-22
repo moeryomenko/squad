@@ -13,10 +13,12 @@ import (
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
 	// primitives for control running goroutines.
-	wg     sync.WaitGroup
-	ctx    context.Context
-	cancel func()
-	funcs  []func(ctx context.Context) error
+	wg             sync.WaitGroup
+	closeOnce      sync.Once
+	ctx            context.Context
+	gracefulPeriod time.Duration
+	cancel         func()
+	funcs          []func(ctx context.Context) error
 
 	// primitives for control goroutines shutdowning.
 	cancellationDelay time.Duration
@@ -29,8 +31,6 @@ type Squad struct {
 	mtx  sync.Mutex
 	errs []error
 }
-
-const defaultCancellationDelay = 2 * time.Second
 
 // Run runs the fn. When fn is done, it signals all the group members to stop.
 func (s *Squad) Run(fn func(context.Context) error) {
@@ -48,7 +48,7 @@ func (s *Squad) RunGracefully(backgroudFn, onDown func(context.Context) error) {
 
 	go func() {
 		defer func() {
-			s.cancel()
+			s.closeOnce.Do(s.cancel)
 			s.wg.Done()
 		}()
 
@@ -102,16 +102,15 @@ func callTimeout(ctx context.Context, fn func(context.Context) error) chan error
 
 // NewSquad returns a new Squad with the context.
 func NewSquad(ctx context.Context, opts ...Option) (*Squad, error) {
-	ctx, cancel := context.WithCancel(ctx)
 	squad := &Squad{
-		ctx:               ctx,
-		cancel:            cancel,
+		gracefulPeriod:    defaultContextCancellation,
 		cancellationDelay: defaultCancellationDelay,
 	}
-
 	for _, opt := range opts {
 		opt(squad)
 	}
+
+	squad.ctx, squad.cancel = WithGracefulPeriod(ctx, squad.gracefulPeriod)
 
 	if err := onStart(ctx, squad.bootstraps...); err != nil {
 		return nil, err
@@ -162,3 +161,8 @@ func onStart(ctx context.Context, bootstraps ...func(context.Context) error) err
 	}
 	return nil
 }
+
+const (
+	defaultCancellationDelay   = 2 * time.Second
+	defaultContextCancellation = 30 * time.Second
+)
