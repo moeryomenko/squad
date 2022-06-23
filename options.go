@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -77,15 +76,10 @@ func profileHandler(port int) (func(context.Context) error, func(context.Context
 }
 
 func handleSignals(ctx context.Context) error {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
 
-	defer func() { signal.Stop(sigs) }()
-
-	select {
-	case <-sigs:
-	case <-ctx.Done():
-	}
+	<-ctx.Done()
 
 	return nil
 }
