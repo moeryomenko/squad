@@ -9,6 +9,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	defaultCancellationDelay = 2 * time.Second
+	// defaultContextGracePeriod is default grace period.
+	// see: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
+	defaultContextGracePeriod = 30 * time.Second
+)
+
 // Squad is a collection of goroutines that go up and running altogether.
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
@@ -30,7 +37,46 @@ type Squad struct {
 	errs []error
 }
 
-const defaultCancellationDelay = 2 * time.Second
+// New returns a new Squad with the context.
+func New(ctx context.Context, opts ...Option) (*Squad, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	squad := &Squad{
+		ctx:               context.WithValue(ctx, GracePeriod{}, defaultContextGracePeriod),
+		cancel:            cancel,
+		cancellationDelay: defaultCancellationDelay,
+	}
+
+	for _, opt := range opts {
+		opt(squad)
+	}
+
+	if err := onStart(ctx, squad.bootstraps...); err != nil {
+		return nil, err
+	}
+
+	for _, f := range squad.funcs {
+		squad.Run(f)
+	}
+
+	// launching in the background listener for a graceful shutdown.
+	squad.wg.Add(1)
+	go func() {
+		defer squad.wg.Done()
+
+		<-ctx.Done()
+
+		ctx, cancel := context.WithTimeout(context.Background(), squad.cancellationDelay)
+		defer cancel()
+
+		if squad.cancellationFuncs != nil {
+			squad.shutdown(ctx)
+		}
+
+		<-ctx.Done()
+	}()
+
+	return squad, nil
+}
 
 // Run runs the fn. When fn is done, it signals all the group members to stop.
 func (s *Squad) Run(fn func(context.Context) error) {
@@ -100,47 +146,6 @@ func callTimeout(ctx context.Context, fn func(context.Context) error) chan error
 	return ch
 }
 
-// NewSquad returns a new Squad with the context.
-func NewSquad(ctx context.Context, opts ...Option) (*Squad, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	squad := &Squad{
-		ctx:               ctx,
-		cancel:            cancel,
-		cancellationDelay: defaultCancellationDelay,
-	}
-
-	for _, opt := range opts {
-		opt(squad)
-	}
-
-	if err := onStart(ctx, squad.bootstraps...); err != nil {
-		return nil, err
-	}
-
-	for _, f := range squad.funcs {
-		squad.Run(f)
-	}
-
-	// launching in the background listener for a graceful shutdown.
-	squad.wg.Add(1)
-	go func() {
-		defer squad.wg.Done()
-
-		<-ctx.Done()
-
-		ctx, cancel := context.WithTimeout(context.Background(), squad.cancellationDelay)
-		defer cancel()
-
-		if squad.cancellationFuncs != nil {
-			squad.shutdown(ctx)
-		}
-
-		<-ctx.Done()
-	}()
-
-	return squad, nil
-}
-
 func onStart(ctx context.Context, bootstraps ...func(context.Context) error) error {
 	if len(bootstraps) == 0 {
 		return nil
@@ -162,3 +167,5 @@ func onStart(ctx context.Context, bootstraps ...func(context.Context) error) err
 	}
 	return nil
 }
+
+type GracePeriod struct{}

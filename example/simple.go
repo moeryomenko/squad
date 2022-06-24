@@ -14,7 +14,7 @@ import (
 // healthchecker and signal handler, which will provide
 // graceful shutdown service.
 func main() {
-	s, err := squad.NewSquad(context.Background(),
+	s, err := squad.New(context.Background(),
 		squad.WithSignalHandler(),
 		squad.WithProfileHandler(6000))
 	if err != nil {
