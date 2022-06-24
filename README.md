@@ -16,9 +16,7 @@ import (
 )
 
 func main() {
-	s := squad.NewSquad(context.Background(),
-		squad.WithHealthHandler(5000),
-		squad.WithSignalHandler())
+	s := squad.NewSquad(squad.WithSignalHandler())
 
 	// s.Run(...) // run your code.
 
