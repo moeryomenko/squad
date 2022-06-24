@@ -3,6 +3,8 @@ package squad
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -15,6 +17,23 @@ const (
 	// see: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
 	defaultContextGracePeriod = 30 * time.Second
 )
+
+// RunServer is wrapper function for launch http server.
+func RunServer(srv *http.Server) (up, down func(context.Context) error) {
+	return func(ctx context.Context) error {
+			err := srv.ListenAndServe()
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		}, func(ctx context.Context) error {
+			err := srv.Shutdown(ctx)
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		}
+}
 
 // Squad is a collection of goroutines that go up and running altogether.
 // If one goroutine exits, other goroutines also go down.
@@ -38,10 +57,10 @@ type Squad struct {
 }
 
 // New returns a new Squad with the context.
-func New(ctx context.Context, opts ...Option) (*Squad, error) {
-	ctx, cancel := context.WithCancel(ctx)
+func New(opts ...Option) (*Squad, error) {
+	ctx, cancel := context.WithCancel(context.Background())
 	squad := &Squad{
-		ctx:               context.WithValue(ctx, GracePeriod{}, defaultContextGracePeriod),
+		ctx:               ctx,
 		cancel:            cancel,
 		cancellationDelay: defaultCancellationDelay,
 	}
@@ -167,5 +186,3 @@ func onStart(ctx context.Context, bootstraps ...func(context.Context) error) err
 	}
 	return nil
 }
-
-type GracePeriod struct{}

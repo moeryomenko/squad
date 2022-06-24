@@ -14,9 +14,7 @@ import (
 // healthchecker and signal handler, which will provide
 // graceful shutdown service.
 func main() {
-	s, err := squad.New(context.Background(),
-		squad.WithSignalHandler(),
-		squad.WithProfileHandler(6000))
+	s, err := squad.New(squad.WithSignalHandler(2 * time.Second))
 	if err != nil {
 		log.Fatalf("service could not start, reason: %v", err)
 	}
@@ -27,7 +25,7 @@ func main() {
 		fmt.Println("service shutdowning...")
 		time.Sleep(3 * time.Second)
 
-		// never printed, because default cancellation timeout 2 seconds.
+		// never printed, because default grace period 2 seconds.
 		fmt.Println("service shutdowned")
 
 		return nil
