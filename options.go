@@ -19,8 +19,8 @@ func WithShutdownDelay(t time.Duration) Option {
 }
 
 // WithSignalHandler is a Squad option that adds signal handling
-// goroutine to the squad. This goroutine will exit on SIGINT or SIGTERM
-// or SIGQUIT and trigger cancellation of the whole squad.
+// goroutine to the squad. This goroutine will exit on SIGINT or SIGHUP
+// or SIGTERM or SIGQUIT and trigger cancellation of the whole squad.
 // Also replace squad context by delayed context.
 func WithSignalHandler(customDelay ...time.Duration) Option {
 	delay := defaultContextGracePeriod
@@ -28,8 +28,7 @@ func WithSignalHandler(customDelay ...time.Duration) Option {
 		delay = customDelay[0]
 	}
 	return func(squad *Squad) {
-		squad.funcs = append(squad.funcs, handleSignals(squad.ctx))
-		squad.ctx = WithDelay(squad.ctx, delay)
+		squad.funcs = append(squad.funcs, handleSignals(delay))
 	}
 }
 
@@ -49,11 +48,12 @@ func WithCloses(fns ...func(context.Context) error) Option {
 	}
 }
 
-func handleSignals(ctx context.Context) func(context.Context) error {
-	return func(_ context.Context) error {
-		ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+func handleSignals(delay time.Duration) func(context.Context) error {
+	return func(ctx context.Context) error {
+		ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 		defer stop()
 		<-ctx.Done()
+		<-time.After(delay)
 		return ctx.Err()
 	}
 }
