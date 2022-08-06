@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -46,7 +47,7 @@ func TestSquad(t *testing.T) {
 				},
 				func(ctx context.Context) error { return nil },
 			},
-			errs: []error{errTask},
+			errs: []error{multierror.Append(errTask)},
 		},
 		{
 			name:        "failed shutdown",
@@ -75,7 +76,7 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			errs: []error{errTask, errTask},
+			errs: []error{multierror.Append(errTask), errTask},
 		},
 		{
 			name:        "up failed and down failed by timeout",
@@ -90,7 +91,7 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			errs: []error{errTask},
+			errs: []error{multierror.Append(errTask), context.DeadlineExceeded},
 		},
 	}
 

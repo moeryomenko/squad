@@ -28,7 +28,7 @@ func WithSignalHandler(customDelay ...time.Duration) Option {
 		delay = customDelay[0]
 	}
 	return func(squad *Squad) {
-		squad.funcs = append(squad.funcs, handleSignals(delay))
+		go handleSignals(delay, squad.cancel)
 	}
 }
 
@@ -36,7 +36,12 @@ func WithSignalHandler(customDelay ...time.Duration) Option {
 // which will be executed before squad started.
 func WithBootstrap(fns ...func(context.Context) error) Option {
 	return func(s *Squad) {
-		s.bootstraps = fns
+		for _, fn := range fns {
+			if fn == nil {
+				continue
+			}
+			s.bootstraps = append(s.bootstraps, fn)
+		}
 	}
 }
 
@@ -48,12 +53,10 @@ func WithCloses(fns ...func(context.Context) error) Option {
 	}
 }
 
-func handleSignals(delay time.Duration) func(context.Context) error {
-	return func(ctx context.Context) error {
-		ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
-		defer stop()
-		<-ctx.Done()
-		<-time.After(delay)
-		return ctx.Err()
-	}
+func handleSignals(delay time.Duration, cancel func()) {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
+	<-ctx.Done()
+	<-time.After(delay)
+	cancel()
 }

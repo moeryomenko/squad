@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
+	"github.com/moeryomenko/synx"
 )
 
 const (
@@ -39,7 +39,7 @@ func RunServer(srv *http.Server) (up, down func(context.Context) error) {
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
 	// primitives for control running goroutines.
-	wg     sync.WaitGroup
+	wg     *synx.CtxGroup
 	ctx    context.Context
 	cancel func()
 	funcs  []func(ctx context.Context) error
@@ -63,6 +63,7 @@ func New(opts ...Option) (*Squad, error) {
 		ctx:               ctx,
 		cancel:            cancel,
 		cancellationDelay: defaultCancellationDelay,
+		wg:                synx.NewCtxGroup(ctx),
 	}
 
 	for _, opt := range opts {
@@ -76,23 +77,6 @@ func New(opts ...Option) (*Squad, error) {
 	for _, f := range squad.funcs {
 		squad.Run(f)
 	}
-
-	// launching in the background listener for a graceful shutdown.
-	squad.wg.Add(1)
-	go func() {
-		defer squad.wg.Done()
-
-		<-ctx.Done()
-
-		ctx, cancel := context.WithTimeout(context.Background(), squad.cancellationDelay)
-		defer cancel()
-
-		if squad.cancellationFuncs != nil {
-			squad.shutdown(ctx)
-		}
-
-		<-ctx.Done()
-	}()
 
 	return squad, nil
 }
@@ -109,24 +93,19 @@ func (s *Squad) RunGracefully(backgroudFn, onDown func(context.Context) error) {
 		s.cancellationFuncs = append(s.cancellationFuncs, onDown)
 	}
 
-	s.wg.Add(1)
-
-	go func() {
-		defer func() {
-			s.cancel()
-			s.wg.Done()
-		}()
-
-		if err := backgroudFn(s.ctx); err != nil {
-			s.appendErr(err)
-		}
-	}()
+	s.wg.Go(backgroudFn)
 }
 
 // Wait blocks until all squad members exit.
 func (s *Squad) Wait() []error {
-	s.wg.Wait()
-
+	err := s.wg.Wait()
+	if err != nil {
+		s.appendErr(err)
+	}
+	err = s.shutdown()
+	if err != nil {
+		s.appendErr(err)
+	}
 	return s.errs
 }
 
@@ -136,23 +115,28 @@ func (s *Squad) appendErr(err error) {
 	s.mtx.Unlock()
 }
 
-func (s *Squad) shutdown(ctx context.Context) {
-	s.wg.Add(len(s.cancellationFuncs))
-	for _, cancelFn := range s.cancellationFuncs {
-		go func(cancelFn func(ctx context.Context) error) {
-			defer s.wg.Done()
+func (s *Squad) shutdown() error {
+	if len(s.cancellationFuncs) == 0 {
+		return nil
+	}
 
-			var err error
+	ctx, cancel := context.WithTimeout(context.Background(), s.cancellationDelay)
+	defer cancel()
+
+	group := synx.NewErrGroup(ctx)
+	for _, cancelFn := range s.cancellationFuncs {
+		cancelFn := cancelFn
+		group.Go(func(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
-				return
-			case err = <-callTimeout(ctx, cancelFn):
+				return ctx.Err()
+			case err := <-callTimeout(ctx, cancelFn):
+				return err
 			}
-			if err != nil {
-				s.appendErr(err)
-			}
-		}(cancelFn)
+		})
 	}
+
+	return group.Wait()
 }
 
 func callTimeout(ctx context.Context, fn func(context.Context) error) chan error {
@@ -170,19 +154,10 @@ func onStart(ctx context.Context, bootstraps ...func(context.Context) error) err
 		return nil
 	}
 
-	group, bootstrapCtx := errgroup.WithContext(ctx)
+	group := synx.NewErrGroup(ctx)
 	for _, fn := range bootstraps {
-		fn := fn
-		if fn == nil {
-			continue
-		}
-
-		group.Go(func() error { return fn(bootstrapCtx) })
+		group.Go(fn)
 	}
 
-	err := group.Wait()
-	if err != nil {
-		return err
-	}
-	return nil
+	return group.Wait()
 }
