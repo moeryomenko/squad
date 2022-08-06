@@ -99,7 +99,7 @@ func TestSquad(t *testing.T) {
 	for _, testcase := range testcases {
 		tc := testcase
 		t.Run(tc.name, func(t *testing.T) {
-			testGroup, err := New(WithShutdownDelay(100*time.Millisecond), WithBootstrap(tc.bootstraps))
+			testGroup, err := New(WithSignalHandler(100*time.Millisecond), WithBootstrap(tc.bootstraps))
 			if tc.shouldStart {
 				assert.NoError(t, err)
 			} else {
