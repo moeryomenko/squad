@@ -14,7 +14,10 @@ import (
 // healthchecker and signal handler, which will provide
 // graceful shutdown service.
 func main() {
-	s, err := squad.New(squad.WithSignalHandler(2 * time.Second))
+	s, err := squad.New(squad.WithSignalHandler(
+		2*time.Second, // shutdown timeout, or e.g. reserved time for the release of resources.
+		2*time.Second, // graceful shutdown timeout.
+	))
 	if err != nil {
 		log.Fatalf("service could not start, reason: %v", err)
 	}

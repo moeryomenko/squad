@@ -10,25 +10,18 @@ import (
 // Option is an option that can be applied to Squad.
 type Option func(*Squad)
 
-// WithShutdownDelay sets time for cancellation timeout.
-// Default timeout is 2 seconds.
-func WithShutdownDelay(t time.Duration) Option {
-	return func(squad *Squad) {
-		squad.cancellationDelay = t
-	}
-}
-
 // WithSignalHandler is a Squad option that adds signal handling
 // goroutine to the squad. This goroutine will exit on SIGINT or SIGHUP
-// or SIGTERM or SIGQUIT and trigger cancellation of the whole squad.
-// Also replace squad context by delayed context.
-func WithSignalHandler(customDelay ...time.Duration) Option {
+// or SIGTERM or SIGQUIT with graceful timeount and reserves
+// time for the release of resources.
+func WithSignalHandler(shutdownTimeout time.Duration, customDelay ...time.Duration) Option {
 	delay := defaultContextGracePeriod
 	if len(customDelay) != 0 {
 		delay = customDelay[0]
 	}
 	return func(squad *Squad) {
-		go handleSignals(delay, squad.cancel)
+		squad.cancellationDelay = shutdownTimeout
+		go handleSignals(delay-shutdownTimeout, squad.cancel)
 	}
 }
 
