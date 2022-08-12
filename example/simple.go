@@ -15,20 +15,21 @@ import (
 // graceful shutdown service.
 func main() {
 	s, err := squad.New(squad.WithSignalHandler(
-		2*time.Second, // shutdown timeout, or e.g. reserved time for the release of resources.
-		2*time.Second, // graceful shutdown timeout.
+		squad.WithGracefulPeriod(10*time.Second),
+		squad.WithShutdownTimeout(2*time.Second),
 	))
 	if err != nil {
 		log.Fatalf("service could not start, reason: %v", err)
 	}
 
-	s.RunGracefully(func(_ context.Context) error {
+	s.RunGracefully(func(ctx context.Context) error {
+		<-ctx.Done()
 		return nil
 	}, func(_ context.Context) error {
 		fmt.Println("service shutdowning...")
 		time.Sleep(3 * time.Second)
 
-		// never printed, because default grace period 2 seconds.
+		// never printed, because we set shutdown timeout 2 seconds.
 		fmt.Println("service shutdowned")
 
 		return nil

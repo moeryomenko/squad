@@ -37,7 +37,7 @@ func TestSquad(t *testing.T) {
 			shouldStart: false,
 		},
 		{
-			name:        "backgroud task faield",
+			name:        "background task faield",
 			bootstraps:  nil,
 			shouldStart: true,
 			background: [2]func(context.Context) error{
@@ -99,7 +99,11 @@ func TestSquad(t *testing.T) {
 	for _, testcase := range testcases {
 		tc := testcase
 		t.Run(tc.name, func(t *testing.T) {
-			testGroup, err := New(WithSignalHandler(100*time.Millisecond), WithBootstrap(tc.bootstraps))
+			testGroup, err := New(
+				WithSignalHandler(
+					WithShutdownTimeout(100*time.Millisecond)),
+				WithBootstrap(tc.bootstraps),
+			)
 			if tc.shouldStart {
 				assert.NoError(t, err)
 			} else {

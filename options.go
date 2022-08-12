@@ -10,18 +10,39 @@ import (
 // Option is an option that can be applied to Squad.
 type Option func(*Squad)
 
+// ShutdownOpt is an options that can be applied to signal handler.
+type ShutdownOpt func(*shutdown)
+
+// WithGracefulPeriod sets graceful shutdown period to signal handler.
+func WithGracefulPeriod(period time.Duration) ShutdownOpt {
+	return func(s *shutdown) {
+		s.gracefulPeriod = period
+	}
+}
+
+// WithShutdownTimeout sets timeout for reserves time for the release of resource.
+func WithShutdownTimeout(timeout time.Duration) ShutdownOpt {
+	return func(s *shutdown) {
+		s.shutdownTimeout = timeout
+	}
+}
+
 // WithSignalHandler is a Squad option that adds signal handling
 // goroutine to the squad. This goroutine will exit on SIGINT or SIGHUP
 // or SIGTERM or SIGQUIT with graceful timeount and reserves
 // time for the release of resources.
-func WithSignalHandler(shutdownTimeout time.Duration, customDelay ...time.Duration) Option {
-	delay := defaultContextGracePeriod
-	if len(customDelay) != 0 {
-		delay = customDelay[0]
+func WithSignalHandler(opts ...ShutdownOpt) Option {
+	config := shutdown{
+		gracefulPeriod:  defaultContextGracePeriod,
+		shutdownTimeout: defaultCancellationDelay,
+	}
+
+	for _, opt := range opts {
+		opt(&config)
 	}
 	return func(squad *Squad) {
-		squad.cancellationDelay = shutdownTimeout
-		go handleSignals(delay-shutdownTimeout, squad.cancel)
+		squad.cancellationDelay = config.shutdownTimeout
+		go handleSignals(config.delay(), squad.cancel)
 	}
 }
 
@@ -52,4 +73,13 @@ func handleSignals(delay time.Duration, cancel func()) {
 	<-ctx.Done()
 	<-time.After(delay)
 	cancel()
+}
+
+type shutdown struct {
+	gracefulPeriod  time.Duration
+	shutdownTimeout time.Duration
+}
+
+func (s *shutdown) delay() time.Duration {
+	return s.gracefulPeriod - s.shutdownTimeout
 }
