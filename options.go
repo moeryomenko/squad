@@ -67,6 +67,15 @@ func WithCloses(fns ...func(context.Context) error) Option {
 	}
 }
 
+// WithSubsystem is Squad option that add init and cleanup functions
+// for given subsystem witll be executed before and after squad ran.
+func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
+	return func(s *Squad) {
+		s.bootstraps = append(s.bootstraps, initFn)
+		s.cancellationFuncs = append(s.cancellationFuncs, closeFn)
+	}
+}
+
 func handleSignals(delay time.Duration, cancel func()) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
