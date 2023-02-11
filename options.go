@@ -42,7 +42,7 @@ func WithSignalHandler(opts ...ShutdownOpt) Option {
 	}
 	return func(squad *Squad) {
 		squad.cancellationDelay = config.shutdownTimeout
-		go handleSignals(config.delay(), squad.cancel)
+		squad.serverContext = handleSignals(config.delay(), squad.cancel)
 	}
 }
 
@@ -76,12 +76,20 @@ func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
 	}
 }
 
-func handleSignals(delay time.Duration, cancel func()) {
+func handleSignals(delay time.Duration, cancel func()) context.Context {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
-	defer stop()
-	<-ctx.Done()
-	<-time.After(delay)
-	cancel()
+
+	go func() {
+		defer stop()
+		<-ctx.Done()
+		// NOTE: After receiving signal shut down server, and
+		// wait while all active request and operations complete,
+		// after delay cancel squad context.
+		<-time.After(delay)
+		cancel()
+	}()
+
+	return ctx
 }
 
 type shutdown struct {

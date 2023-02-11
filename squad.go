@@ -18,23 +18,6 @@ const (
 	defaultContextGracePeriod = 30 * time.Second
 )
 
-// RunServer is wrapper function for launch http server.
-func RunServer(srv *http.Server) (up, down func(context.Context) error) {
-	return func(ctx context.Context) error {
-			err := srv.ListenAndServe()
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return err
-		}, func(ctx context.Context) error {
-			err := srv.Shutdown(ctx)
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return err
-		}
-}
-
 // Squad is a collection of goroutines that go up and running altogether.
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
@@ -43,6 +26,9 @@ type Squad struct {
 	ctx    context.Context
 	cancel func()
 	funcs  []func(ctx context.Context) error
+
+	// server context used for run http server.
+	serverContext context.Context
 
 	// primitives for control goroutines shutdowning.
 	cancellationDelay time.Duration
@@ -79,6 +65,25 @@ func New(opts ...Option) (*Squad, error) {
 	}
 
 	return squad, nil
+}
+
+// RunServer is wrapper function for launch http server.
+func (s *Squad) RunServer(srv *http.Server) {
+	s.wg.Go(func(_ context.Context) error {
+		err := srv.ListenAndServe()
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	})
+
+	// NOTE: After receiving shutdowning signal first of all,
+	// gracefully shuts down the server without interrupting any active connections.
+	go func(ctx context.Context) {
+		<-ctx.Done()
+		err := srv.Shutdown(context.Background())
+		s.appendErr(err)
+	}(s.serverContext)
 }
 
 // Run runs the fn. When fn is done, it signals all the group members to stop.
