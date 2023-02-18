@@ -99,6 +99,8 @@ func TestSquad(t *testing.T) {
 	for _, testcase := range testcases {
 		tc := testcase
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			testGroup, err := New(
 				WithSignalHandler(
 					WithShutdownTimeout(100*time.Millisecond)),

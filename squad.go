@@ -1,3 +1,26 @@
+// ███████╗ ██████╗ ██╗   ██╗ █████╗ ██████╗
+// ██╔════╝██╔═══██╗██║   ██║██╔══██╗██╔══██╗
+// ███████╗██║   ██║██║   ██║███████║██║  ██║
+// ╚════██║██║▄▄ ██║██║   ██║██╔══██║██║  ██║
+// ███████║╚██████╔╝╚██████╔╝██║  ██║██████╔╝
+// ╚══════╝ ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝╚═════╝
+//
+// The APACHE License (APACHE)
+//
+// Copyright (c) 2023 Maxim Eryomenko <moeryomenko at gmail dot com>. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package squad contains a shared shutdown primitive.
 package squad
 
@@ -84,6 +107,15 @@ func (s *Squad) RunServer(srv *http.Server) {
 		err := srv.Shutdown(context.Background())
 		s.appendErr(err)
 	}(s.serverContext)
+}
+
+// RunConsumer is wrapper function for run cosumer worker
+// after receiving shutdowning signal stop context for consumer events/messages
+// without interrupting any active handler.
+func (s *Squad) RunConsumer(consumer ConsumerLoop) {
+	go func(consumeContext, handleContext context.Context) {
+		consumer(consumeContext, handleContext)
+	}(s.serverContext, s.ctx)
 }
 
 // Run runs the fn. When fn is done, it signals all the group members to stop.
