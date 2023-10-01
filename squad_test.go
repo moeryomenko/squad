@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +18,7 @@ func TestSquad(t *testing.T) {
 		bootstraps  func(context.Context) error
 		background  [2]func(context.Context) error
 		shouldStart bool
-		errs        []error
+		err         error
 	}{
 		{
 			name:        "basic case",
@@ -29,7 +28,7 @@ func TestSquad(t *testing.T) {
 				func(ctx context.Context) error { return nil },
 				func(ctx context.Context) error { return nil },
 			},
-			errs: nil,
+			err: nil,
 		},
 		{
 			name:        "failed on start",
@@ -47,7 +46,7 @@ func TestSquad(t *testing.T) {
 				},
 				func(ctx context.Context) error { return nil },
 			},
-			errs: []error{multierror.Append(errTask)},
+			err: errors.Join(errors.Join(errTask)),
 		},
 		{
 			name:        "failed shutdown",
@@ -62,7 +61,7 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			errs: []error{errTask},
+			err: errors.Join(errTask),
 		},
 		{
 			name:        "up and down failed",
@@ -76,7 +75,7 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			errs: []error{multierror.Append(errTask), errTask},
+			err: errors.Join(errors.Join(errTask), errTask),
 		},
 		{
 			name:        "up failed and down failed by timeout",
@@ -91,7 +90,7 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			errs: []error{multierror.Append(errTask), context.DeadlineExceeded},
+			err: errors.Join(errors.Join(errTask), context.DeadlineExceeded),
 		},
 	}
 
@@ -102,8 +101,7 @@ func TestSquad(t *testing.T) {
 			t.Parallel()
 
 			testGroup, err := New(
-				WithSignalHandler(
-					WithShutdownTimeout(100*time.Millisecond)),
+				WithSignalHandler(WithShutdownTimeout(100*time.Millisecond)),
 				WithBootstrap(tc.bootstraps),
 			)
 			if tc.shouldStart {
@@ -115,8 +113,12 @@ func TestSquad(t *testing.T) {
 
 			testGroup.RunGracefully(tc.background[0], tc.background[1])
 
-			errs := testGroup.Wait()
-			assert.Equal(t, tc.errs, errs)
+			err = testGroup.Wait()
+			if tc.err != nil {
+				assert.EqualError(t, tc.err, err.Error())
+			} else {
+				assert.Nil(t, err)
+			}
 		})
 	}
 }

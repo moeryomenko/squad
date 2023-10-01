@@ -61,8 +61,8 @@ type Squad struct {
 	bootstraps []func(context.Context) error
 
 	// guarded errors.
-	mtx  sync.Mutex
-	errs []error
+	mtx sync.Mutex
+	err error
 }
 
 // New returns a new Squad with the context.
@@ -103,8 +103,9 @@ func (s *Squad) RunServer(srv *http.Server) {
 	// NOTE: After receiving shutdowning signal first of all,
 	// gracefully shuts down the server without interrupting any active connections.
 	go func(ctx context.Context) {
+		shutdownCtx := context.WithoutCancel(ctx)
 		<-ctx.Done()
-		err := srv.Shutdown(context.Background())
+		err := srv.Shutdown(shutdownCtx)
 		s.appendErr(err)
 	}(s.serverContext)
 }
@@ -134,21 +135,21 @@ func (s *Squad) RunGracefully(backgroudFn, onDown func(context.Context) error) {
 }
 
 // Wait blocks until all squad members exit.
-func (s *Squad) Wait() []error {
+func (s *Squad) Wait() error {
 	err := s.wg.Wait()
 	if err != nil {
-		s.appendErr(err)
+		s.err = errors.Join(s.err, err)
 	}
 	err = s.shutdown()
 	if err != nil {
-		s.appendErr(err)
+		s.err = errors.Join(s.err, err)
 	}
-	return s.errs
+	return s.err
 }
 
 func (s *Squad) appendErr(err error) {
 	s.mtx.Lock()
-	s.errs = append(s.errs, err)
+	s.err = errors.Join(s.err, err)
 	s.mtx.Unlock()
 }
 
@@ -157,7 +158,7 @@ func (s *Squad) shutdown() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.cancellationDelay)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), s.cancellationDelay)
 	defer cancel()
 
 	group := synx.NewErrGroup(ctx)

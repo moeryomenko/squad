@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/moeryomenko/squad"
@@ -21,6 +23,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("service could not start, reason: %v", err)
 	}
+
+	http.HandleFunc(`/echo`, func(w http.ResponseWriter, r *http.Request) {
+		log.Printf(`handle request from: %s`, r.Header.Get(`User-Agent`))
+
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf(`read body failed: %s`, err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Write(body)
+	})
+
+	s.RunServer(&http.Server{Addr: ":8080"})
 
 	s.RunGracefully(func(ctx context.Context) error {
 		<-ctx.Done()
