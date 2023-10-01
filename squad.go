@@ -50,9 +50,6 @@ type Squad struct {
 	cancel func()
 	funcs  []func(ctx context.Context) error
 
-	// server context used for run http server.
-	serverContext context.Context
-
 	// primitives for control goroutines shutdowning.
 	cancellationDelay time.Duration
 	cancellationFuncs []func(ctx context.Context) error
@@ -107,16 +104,16 @@ func (s *Squad) RunServer(srv *http.Server) {
 		<-ctx.Done()
 		err := srv.Shutdown(shutdownCtx)
 		s.appendErr(err)
-	}(s.serverContext)
+	}(s.ctx)
 }
 
 // RunConsumer is wrapper function for run cosumer worker
 // after receiving shutdowning signal stop context for consumer events/messages
 // without interrupting any active handler.
 func (s *Squad) RunConsumer(consumer ConsumerLoop) {
-	go func(consumeContext, handleContext context.Context) {
-		consumer(consumeContext, handleContext)
-	}(s.serverContext, s.ctx)
+	s.wg.Go(func(ctx context.Context) error {
+		return consumer(ctx, context.WithoutCancel(ctx))
+	})
 }
 
 // Run runs the fn. When fn is done, it signals all the group members to stop.
