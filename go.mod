@@ -3,7 +3,7 @@ module github.com/moeryomenko/squad
 go 1.21
 
 require (
-	github.com/moeryomenko/synx v0.11.1
+	github.com/moeryomenko/synx v0.11.2
 	github.com/stretchr/testify v1.8.4
 )
 
