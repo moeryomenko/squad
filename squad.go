@@ -45,10 +45,10 @@ const (
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
 	// primitives for control running goroutines.
-	wg     *synx.CtxGroup
-	ctx    context.Context
-	cancel func()
-	funcs  []func(ctx context.Context) error
+	wg                 *synx.CtxGroup
+	ctx, serverContext context.Context
+	cancel             func()
+	funcs              []func(ctx context.Context) error
 
 	// primitives for control goroutines shutdowning.
 	cancellationDelay time.Duration
@@ -104,7 +104,7 @@ func (s *Squad) RunServer(srv *http.Server) {
 		<-ctx.Done()
 		err := srv.Shutdown(shutdownCtx)
 		s.appendErr(err)
-	}(s.ctx)
+	}(s.serverContext)
 }
 
 // RunConsumer is wrapper function for run cosumer worker
