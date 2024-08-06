@@ -27,6 +27,14 @@ func WithShutdownTimeout(timeout time.Duration) ShutdownOpt {
 	}
 }
 
+// WithShutdownInGracePriod sets timeout for shutdown process which will be run immediatly in grace period.
+func WithShutdownInGracePriod(timeout time.Duration) ShutdownOpt {
+	return func(s *shutdown) {
+		s.gracefulPeriod = timeout
+		s.shutdownTimeout = timeout
+	}
+}
+
 // WithSignalHandler is a Squad option that adds signal handling
 // goroutine to the squad. This goroutine will exit on SIGINT or SIGHUP
 // or SIGTERM or SIGQUIT with graceful timeount and reserves
