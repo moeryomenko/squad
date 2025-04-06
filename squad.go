@@ -48,7 +48,6 @@ type Squad struct {
 	wg                 *synx.CtxGroup
 	ctx, serverContext context.Context
 	cancel             func()
-	funcs              []func(ctx context.Context) error
 
 	// primitives for control goroutines shutdowning.
 	cancellationDelay time.Duration
@@ -78,10 +77,6 @@ func New(opts ...Option) (*Squad, error) {
 
 	if err := onStart(ctx, squad.bootstraps...); err != nil {
 		return nil, err
-	}
-
-	for _, f := range squad.funcs {
-		squad.Run(f)
 	}
 
 	return squad, nil
