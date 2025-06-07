@@ -5,7 +5,7 @@ default: lint test
 
 .PHONY: lint
 lint: ## Check the project with lint.
-	@golangci-lint run -v --fix
+	@go tool golangci-lint run -v --fix
 
 .PHONY: test
 test: ## Run unit tests
