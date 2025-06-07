@@ -1,7 +1,7 @@
 COVER_FILE ?= coverage.out
 
 .PHONY: default
-default: lint test
+default: help
 
 .PHONY: lint
 lint: ## Check the project with lint.
