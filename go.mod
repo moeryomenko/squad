@@ -3,8 +3,8 @@ module github.com/moeryomenko/squad
 go 1.24
 
 require (
-	github.com/moeryomenko/synx v0.11.2
-	github.com/stretchr/testify v1.8.4
+	github.com/moeryomenko/synx v0.13.0
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
