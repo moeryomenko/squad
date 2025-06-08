@@ -157,26 +157,11 @@ func (s *Squad) shutdown() error {
 	for _, cancelFn := range s.cancellationFuncs {
 		cancelFn := cancelFn
 		group.Go(func(ctx context.Context) error {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case err := <-callTimeout(ctx, cancelFn):
-				return err
-			}
+			return synx.CallWithContext(ctx, cancelFn)
 		})
 	}
 
 	return group.Wait()
-}
-
-func callTimeout(ctx context.Context, fn func(context.Context) error) chan error {
-	ch := make(chan error, 1)
-
-	go func() {
-		ch <- fn(ctx)
-	}()
-
-	return ch
 }
 
 func onStart(ctx context.Context, bootstraps ...func(context.Context) error) error {
