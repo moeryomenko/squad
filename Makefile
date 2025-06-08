@@ -23,6 +23,7 @@ cover: $(COVER_FILE) ## Output coverage in human readable form in html
 
 .PHONY: mod
 mod: ## Manage go mod dependencies, beautify go.mod and go.sum files.
+	@go tool go-mod-upgrade
 	@go mod tidy
 
 .PHONY: help
