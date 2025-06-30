@@ -27,8 +27,8 @@ func WithShutdownTimeout(timeout time.Duration) ShutdownOpt {
 	}
 }
 
-// WithShutdownInGracePriod sets timeout for shutdown process which will be run immediatly in grace period.
-func WithShutdownInGracePriod(timeout time.Duration) ShutdownOpt {
+// WithShutdownInGracePeriod sets timeout for shutdown process which will be run immediately in grace period.
+func WithShutdownInGracePeriod(timeout time.Duration) ShutdownOpt {
 	return func(s *shutdown) {
 		s.gracefulPeriod = timeout
 		s.shutdownTimeout = timeout
@@ -37,7 +37,7 @@ func WithShutdownInGracePriod(timeout time.Duration) ShutdownOpt {
 
 // WithSignalHandler is a Squad option that adds signal handling
 // goroutine to the squad. This goroutine will exit on SIGINT or SIGHUP
-// or SIGTERM or SIGQUIT with graceful timeount and reserves
+// or SIGTERM or SIGQUIT with graceful timeout and reserves
 // time for the release of resources.
 func WithSignalHandler(opts ...ShutdownOpt) Option {
 	config := shutdown{
@@ -76,7 +76,7 @@ func WithCloses(fns ...func(context.Context) error) Option {
 }
 
 // WithSubsystem is Squad option that add init and cleanup functions
-// for given subsystem witll be executed before and after squad ran.
+// for given subsystem will be executed before and after squad ran.
 func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
 	return func(s *Squad) {
 		s.bootstraps = append(s.bootstraps, initFn)
@@ -85,7 +85,13 @@ func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
 }
 
 func handleSignals(delay time.Duration, cancel func()) context.Context {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGHUP,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,
+	)
 
 	go func() {
 		defer stop()
@@ -106,5 +112,10 @@ type shutdown struct {
 }
 
 func (s *shutdown) delay() time.Duration {
-	return s.gracefulPeriod - s.shutdownTimeout
+	delay := s.gracefulPeriod - s.shutdownTimeout
+	if delay < 0 {
+		return 0
+	}
+
+	return delay
 }

@@ -25,6 +25,7 @@
 package squad
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -92,17 +93,15 @@ func (s *Squad) RunServer(srv *http.Server) {
 		return err
 	})
 
-	// NOTE: After receiving shutdowning signal first of all,
-	// gracefully shuts down the server without interrupting any active connections.
 	go func(ctx context.Context) {
 		shutdownCtx := context.WithoutCancel(ctx)
 		<-ctx.Done()
 		err := srv.Shutdown(shutdownCtx)
 		s.appendErr(err)
-	}(s.serverContext)
+	}(cmp.Or(s.serverContext, context.Background()))
 }
 
-// RunConsumer is wrapper function for run cosumer worker
+// RunConsumer is wrapper function for run consumer worker
 // after receiving shutdowning signal stop context for consumer events/messages
 // without interrupting any active handler.
 func (s *Squad) RunConsumer(consumer ConsumerLoop) {
@@ -116,14 +115,14 @@ func (s *Squad) Run(fn func(context.Context) error) {
 	s.RunGracefully(fn, nil)
 }
 
-// RunGracefully runs the backgroudFn. When fn is done, it signals all group members to stop.
+// RunGracefully runs the backgroundFn. When fn is done, it signals all group members to stop.
 // When stop signal has been received, squad run onDown function.
-func (s *Squad) RunGracefully(backgroudFn, onDown func(context.Context) error) {
+func (s *Squad) RunGracefully(backgroundFn, onDown func(context.Context) error) {
 	if onDown != nil {
 		s.cancellationFuncs = append(s.cancellationFuncs, onDown)
 	}
 
-	s.wg.Go(backgroudFn)
+	s.wg.Go(backgroundFn)
 }
 
 // Wait blocks until all squad members exit.
@@ -171,6 +170,9 @@ func onStart(ctx context.Context, bootstraps ...func(context.Context) error) err
 
 	group := synx.NewErrGroup(ctx)
 	for _, fn := range bootstraps {
+		if fn == nil {
+			continue
+		}
 		group.Go(fn)
 	}
 
