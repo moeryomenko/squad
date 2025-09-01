@@ -17,7 +17,7 @@ import (
 // graceful shutdown service.
 func main() {
 	s, err := squad.New(squad.WithSignalHandler(
-		squad.WithShutdownInGracePriod(2 * time.Second),
+		squad.WithShutdownInGracePeriod(2 * time.Second),
 	))
 	if err != nil {
 		log.Fatalf("service could not start, reason: %v", err)

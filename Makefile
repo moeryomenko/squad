@@ -1,4 +1,5 @@
 COVER_FILE ?= coverage.out
+RACE_DETECTOR := $(if $(RACE_DETECTOR), -race)
 
 .PHONY: default
 default: help
@@ -9,12 +10,8 @@ lint: ## Check the project with lint.
 
 .PHONY: test
 test: ## Run unit tests
-	@go test ./... -coverprofile=$(COVER_FILE)
+	@go test $(RACE_DETECTOR) ./... -coverprofile=$(COVER_FILE)
 	@go tool cover -func=$(COVER_FILE) | grep ^total
-
-.PHONY: test-race
-test-race: ## Run unit test and race detector.
-	@go test -race ./... -coverprofile=$(COVER_FILE)
 
 .PHONY: cover
 cover: $(COVER_FILE) ## Output coverage in human readable form in html
