@@ -1,4 +1,4 @@
-package squad
+package squad_test
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/moeryomenko/squad"
 )
 
 func TestSquad(t *testing.T) {
@@ -100,9 +102,9 @@ func TestSquad(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testGroup, err := New(
-				WithSignalHandler(WithShutdownTimeout(100*time.Millisecond)),
-				WithBootstrap(tc.bootstraps),
+			testGroup, err := squad.New(
+				squad.WithSignalHandler(squad.WithShutdownTimeout(100*time.Millisecond)),
+				squad.WithBootstrap(tc.bootstraps),
 			)
 			if tc.shouldStart {
 				assert.NoError(t, err)
