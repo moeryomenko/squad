@@ -1,5 +1,6 @@
 COVER_FILE ?= coverage.out
 RACE_DETECTOR := $(if $(RACE_DETECTOR), -race)
+IMPORT_PATH ?= $(shell go list -m -f {{.Path}} | head -1)
 
 .PHONY: default
 default: help
@@ -7,6 +8,11 @@ default: help
 .PHONY: lint
 lint: ## Check the project with lint.
 	@go tool golangci-lint run -v --fix
+
+.PHONY: fmt
+fmt: ## Format the code.
+	@gofmt -w .
+	@git status --short | grep '[A|M]' | grep -E -o "[^ ]*$$" | grep '\.go$$' | xargs -I{} go tool goimports -local $(IMPORT_PATH) -w {}
 
 .PHONY: test
 test: ## Run unit tests

@@ -84,7 +84,7 @@ go get github.com/moeryomenko/squad
 ```
 
 **Requirements:**
-- Go 1.24 or higher
+- Go 1.25 or higher
 
 ---
 
@@ -334,7 +334,7 @@ squad/
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.25+
 - golangci-lint (for linting)
 - go-mod-upgrade (for dependency management)
 
