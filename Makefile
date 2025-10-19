@@ -12,6 +12,7 @@ lint: ## Check the project with lint.
 .PHONY: fmt
 fmt: ## Format the code.
 	@gofmt -w .
+	@git status --short | grep '[A|M]' | grep -E -o "[^ ]*$$" | grep '\.go$$' | xargs -I{} go tool golines --base-formatter=gofumpt --ignore-generated --tab-len=1 --max-len=120 -w {}
 	@git status --short | grep '[A|M]' | grep -E -o "[^ ]*$$" | grep '\.go$$' | xargs -I{} go tool goimports -local $(IMPORT_PATH) -w {}
 
 .PHONY: test
