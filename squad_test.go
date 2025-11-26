@@ -142,14 +142,14 @@ func TestHTTPServerGracefulShutdown(t *testing.T) {
 		Handler: handler,
 	}
 
-	squad, _ := squad.New(
+	s, _ := squad.New(
 		squad.WithSignalHandler(
 			squad.WithGracefulPeriod(300 * time.Millisecond),
 		),
 	)
 
 	// Start server
-	squad.RunServer(srv)
+	s.RunServer(srv)
 
 	// Start client requests
 	var wg sync.WaitGroup
@@ -173,7 +173,7 @@ func TestHTTPServerGracefulShutdown(t *testing.T) {
 	}()
 
 	// Wait for shutdown
-	err := squad.Wait()
+	err := s.Wait()
 	wg.Wait()
 
 	// Verify in-flight requests completed
