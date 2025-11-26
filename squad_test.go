@@ -3,6 +3,11 @@ package squad_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -123,4 +128,55 @@ func TestSquad(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHTTPServerGracefulShutdown(t *testing.T) {
+	// Setup test server
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		fmt.Fprintf(w, "Hello")
+	})
+
+	srv := &http.Server{
+		Addr:    ":9090",
+		Handler: handler,
+	}
+
+	squad, _ := squad.New(
+		squad.WithSignalHandler(
+			squad.WithGracefulPeriod(300 * time.Millisecond),
+		),
+	)
+
+	// Start server
+	squad.RunServer(srv)
+
+	// Start client requests
+	var wg sync.WaitGroup
+	var successCount int32
+
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp, err := http.Get("http://localhost:9090")
+			if err == nil && resp.StatusCode == http.StatusOK {
+				atomic.AddInt32(&successCount, 1)
+			}
+		}()
+	}
+
+	// Trigger shutdown after starting requests
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+	}()
+
+	// Wait for shutdown
+	err := squad.Wait()
+	wg.Wait()
+
+	// Verify in-flight requests completed
+	assert.NoError(t, err)
+	assert.Equal(t, int32(5), successCount, "All in-flight requests should complete")
 }

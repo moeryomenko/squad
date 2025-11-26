@@ -29,7 +29,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/moeryomenko/synx"
@@ -56,10 +55,6 @@ type Squad struct {
 
 	// bootstrap functions.
 	bootstraps []func(context.Context) error
-
-	// guarded errors.
-	mtx sync.Mutex
-	err error
 }
 
 // New returns a new Squad with the context.
@@ -85,20 +80,29 @@ func New(opts ...Option) (*Squad, error) {
 
 // RunServer is wrapper function for launch http server.
 func (s *Squad) RunServer(srv *http.Server) {
-	s.wg.Go(func(_ context.Context) error {
-		err := srv.ListenAndServe()
-		if err == nil || errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	})
+	// Track the server in the context group
+	s.wg.Go(func(ctx context.Context) error {
+		startErr := make(chan error, 1)
 
-	go func(ctx context.Context) {
-		shutdownCtx := context.WithoutCancel(ctx)
-		<-ctx.Done()
-		err := srv.Shutdown(shutdownCtx)
-		s.appendErr(err)
-	}(cmp.Or(s.serverContext, context.Background()))
+		go func() {
+			err := srv.ListenAndServe()
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				startErr <- err
+			}
+			close(startErr)
+		}()
+
+		select {
+		case err := <-startErr:
+			return err
+		case <-cmp.Or(s.serverContext, ctx).Done():
+			// Initiate graceful shutdown
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cancellationDelay)
+			defer cancel()
+
+			return srv.Shutdown(shutdownCtx)
+		}
+	})
 }
 
 // RunConsumer is wrapper function for run consumer worker
@@ -127,21 +131,19 @@ func (s *Squad) RunGracefully(backgroundFn, onDown func(context.Context) error) 
 
 // Wait blocks until all squad members exit.
 func (s *Squad) Wait() error {
-	err := s.wg.Wait()
-	if err != nil {
-		s.err = errors.Join(s.err, err)
-	}
-	err = s.shutdown()
-	if err != nil {
-		s.err = errors.Join(s.err, err)
-	}
-	return s.err
-}
+	var err error
 
-func (s *Squad) appendErr(err error) {
-	s.mtx.Lock()
-	s.err = errors.Join(s.err, err)
-	s.mtx.Unlock()
+	waitErr := s.wg.Wait()
+	if waitErr != nil {
+		err = errors.Join(err, waitErr)
+	}
+
+	shutdownErr := s.shutdown()
+	if shutdownErr != nil {
+		err = errors.Join(err, shutdownErr)
+	}
+
+	return err
 }
 
 func (s *Squad) shutdown() error {
@@ -154,7 +156,6 @@ func (s *Squad) shutdown() error {
 
 	group := synx.NewErrGroup(ctx)
 	for _, cancelFn := range s.cancellationFuncs {
-		cancelFn := cancelFn
 		group.Go(func(ctx context.Context) error {
 			return synx.CallWithContext(ctx, cancelFn)
 		})
