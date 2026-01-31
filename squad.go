@@ -27,29 +27,29 @@ package squad
 import (
 	"context"
 	"errors"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/moeryomenko/synx"
 )
 
-const (
-	defaultCancellationDelay = 2 * time.Second
-	// defaultContextGracePeriod is default grace period.
-	// see: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
-	defaultContextGracePeriod = 30 * time.Second
-)
+// defaultContextGracePeriod is default grace period.
+// see: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
+const defaultContextGracePeriod = 30 * time.Second
 
 // Squad is a collection of goroutines that go up and running altogether.
 // If one goroutine exits, other goroutines also go down.
 type Squad struct {
 	// primitives for control running goroutines.
-	wg                 *synx.CtxGroup
-	ctx, serverContext context.Context
-	cancel             func()
+	wg     *synx.CtxGroup
+	ctx    context.Context
+	cancel func()
 
 	// primitives for control goroutines shutdowning.
-	cancellationDelay time.Duration
-	cancellationFuncs []func(ctx context.Context) error
+	shutdownGracefulTimeout time.Duration
+	shutdownFuncs           []func(ctx context.Context) error
 
 	// bootstrap functions.
 	bootstraps []func(context.Context) error
@@ -59,15 +59,17 @@ type Squad struct {
 func New(opts ...Option) (*Squad, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	squad := &Squad{
-		ctx:               ctx,
-		cancel:            cancel,
-		cancellationDelay: defaultCancellationDelay,
-		wg:                synx.NewCtxGroup(ctx),
+		ctx:                     ctx,
+		cancel:                  cancel,
+		shutdownGracefulTimeout: defaultContextGracePeriod,
+		wg:                      synx.NewCtxGroup(ctx),
 	}
 
 	for _, opt := range opts {
 		opt(squad)
 	}
+
+	squad.startSignalHandler()
 
 	if err := onStart(ctx, squad.bootstraps...); err != nil {
 		return nil, err
@@ -85,7 +87,7 @@ func (s *Squad) Run(fn func(context.Context) error) {
 // When stop signal has been received, squad run onDown function.
 func (s *Squad) RunGracefully(backgroundFn, onDown func(context.Context) error) {
 	if onDown != nil {
-		s.cancellationFuncs = append(s.cancellationFuncs, onDown)
+		s.shutdownFuncs = append(s.shutdownFuncs, onDown)
 	}
 
 	s.wg.Go(backgroundFn)
@@ -109,21 +111,48 @@ func (s *Squad) Wait() error {
 }
 
 func (s *Squad) shutdown() error {
-	if len(s.cancellationFuncs) == 0 {
+	if len(s.shutdownFuncs) == 0 {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), s.cancellationDelay)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), s.shutdownGracefulTimeout)
 	defer cancel()
 
 	group := synx.NewErrGroup(ctx)
-	for _, cancelFn := range s.cancellationFuncs {
+	for _, cancelFn := range s.shutdownFuncs {
 		group.Go(func(ctx context.Context) error {
 			return synx.CallWithContext(ctx, cancelFn)
 		})
 	}
 
 	return group.Wait()
+}
+
+// startSignalHandler starts a goroutine that listens for OS signals
+// and handles graceful shutdown. On first signal, it cancels the context
+// to trigger graceful shutdown. On second signal, it forces exit.
+func (s *Squad) startSignalHandler() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	go func() {
+		defer signal.Stop(sigChan)
+
+		select {
+		case <-sigChan:
+			s.cancel()
+		case <-s.ctx.Done():
+			return
+		}
+
+		// Wait for second signal or context timeout
+		select {
+		case <-sigChan:
+			os.Exit(1)
+		case <-time.After(s.shutdownGracefulTimeout + 5*time.Second):
+			return
+		}
+	}()
 }
 
 func onStart(ctx context.Context, bootstraps ...func(context.Context) error) error {

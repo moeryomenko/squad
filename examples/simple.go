@@ -16,9 +16,7 @@ import (
 // healthchecker and signal handler, which will provide
 // graceful shutdown service.
 func main() {
-	s, err := squad.New(squad.WithSignalHandler(
-		squad.WithShutdownInGracePeriod(2 * time.Second),
-	))
+	s, err := squad.New(squad.WithGracefulPeriod(2 * time.Second))
 	if err != nil {
 		log.Fatalf("service could not start, reason: %v", err)
 	}
@@ -33,7 +31,9 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		w.Write(body)
+		if _, err := w.Write(body); err != nil {
+			log.Printf(`write response failed: %s`, err.Error())
+		}
 	})
 
 	s.RunServer(&http.Server{Addr: ":8080"})
@@ -51,5 +51,7 @@ func main() {
 		return nil
 	})
 
-	s.Wait()
+	if err := s.Wait(); err != nil {
+		log.Fatalf("service wait failed: %v", err)
+	}
 }

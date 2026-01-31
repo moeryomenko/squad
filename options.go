@@ -2,55 +2,16 @@ package squad
 
 import (
 	"context"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
 // Option is an option that can be applied to Squad.
 type Option func(*Squad)
 
-// ShutdownOpt is an options that can be applied to signal handler.
-type ShutdownOpt func(*shutdown)
-
 // WithGracefulPeriod sets graceful shutdown period to signal handler.
-func WithGracefulPeriod(period time.Duration) ShutdownOpt {
-	return func(s *shutdown) {
-		s.gracefulPeriod = period
-	}
-}
-
-// WithShutdownTimeout sets timeout for reserves time for the release of resource.
-func WithShutdownTimeout(timeout time.Duration) ShutdownOpt {
-	return func(s *shutdown) {
-		s.shutdownTimeout = timeout
-	}
-}
-
-// WithShutdownInGracePeriod sets timeout for shutdown process which will be run immediately in grace period.
-func WithShutdownInGracePeriod(timeout time.Duration) ShutdownOpt {
-	return func(s *shutdown) {
-		s.gracefulPeriod = timeout
-		s.shutdownTimeout = timeout
-	}
-}
-
-// WithSignalHandler is a Squad option that adds signal handling
-// goroutine to the squad. This goroutine will exit on SIGINT or SIGHUP
-// or SIGTERM or SIGQUIT with graceful timeout and reserves
-// time for the release of resources.
-func WithSignalHandler(opts ...ShutdownOpt) Option {
-	config := shutdown{
-		gracefulPeriod:  defaultContextGracePeriod,
-		shutdownTimeout: defaultCancellationDelay,
-	}
-
-	for _, opt := range opts {
-		opt(&config)
-	}
-	return func(squad *Squad) {
-		squad.cancellationDelay = config.shutdownTimeout
-		squad.serverContext = handleSignals(config.delay(), squad.cancel)
+func WithGracefulPeriod(gracePeriod time.Duration) Option {
+	return func(s *Squad) {
+		s.shutdownGracefulTimeout = gracePeriod
 	}
 }
 
@@ -71,7 +32,7 @@ func WithBootstrap(fns ...func(context.Context) error) Option {
 // which will be executed after squad stopped.
 func WithCloses(fns ...func(context.Context) error) Option {
 	return func(s *Squad) {
-		s.cancellationFuncs = append(s.cancellationFuncs, fns...)
+		s.shutdownFuncs = append(s.shutdownFuncs, fns...)
 	}
 }
 
@@ -80,42 +41,6 @@ func WithCloses(fns ...func(context.Context) error) Option {
 func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
 	return func(s *Squad) {
 		s.bootstraps = append(s.bootstraps, initFn)
-		s.cancellationFuncs = append(s.cancellationFuncs, closeFn)
+		s.shutdownFuncs = append(s.shutdownFuncs, closeFn)
 	}
-}
-
-func handleSignals(delay time.Duration, cancel func()) context.Context {
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGHUP,
-		syscall.SIGTERM,
-		syscall.SIGQUIT,
-	)
-
-	go func() {
-		defer stop()
-		<-ctx.Done()
-		// NOTE: After receiving signal shut down server, and
-		// wait while all active request and operations complete,
-		// after delay cancel squad context.
-		<-time.After(delay)
-		cancel()
-	}()
-
-	return ctx
-}
-
-type shutdown struct {
-	gracefulPeriod  time.Duration
-	shutdownTimeout time.Duration
-}
-
-func (s *shutdown) delay() time.Duration {
-	delay := s.gracefulPeriod - s.shutdownTimeout
-	if delay < 0 {
-		return 0
-	}
-
-	return delay
 }

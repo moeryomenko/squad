@@ -1,6 +1,6 @@
 module github.com/moeryomenko/squad
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/moeryomenko/synx v0.14.0
