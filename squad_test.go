@@ -6,8 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
+	"github.com/google/go-cmp/cmp"
 	"github.com/moeryomenko/squad"
 )
 
@@ -16,45 +15,45 @@ func TestSquad(t *testing.T) {
 	errTask := errors.New("failed task")
 
 	testcases := []struct {
-		name        string
-		bootstraps  func(context.Context) error
-		background  [2]func(context.Context) error
-		shouldStart bool
-		err         error
+		name           string
+		giveBootstrap  func(context.Context) error
+		giveBackground [2]func(context.Context) error
+		wantStart      bool
+		wantErr        error
 	}{
 		{
-			name:        "basic case",
-			bootstraps:  nil,
-			shouldStart: true,
-			background: [2]func(context.Context) error{
+			name:          "basic case",
+			giveBootstrap: nil,
+			wantStart:     true,
+			giveBackground: [2]func(context.Context) error{
 				func(ctx context.Context) error { return nil },
 				func(ctx context.Context) error { return nil },
 			},
-			err: nil,
+			wantErr: nil,
 		},
 		{
-			name:        "failed on start",
-			bootstraps:  func(ctx context.Context) error { return errInit },
-			shouldStart: false,
+			name:          "failed on start",
+			giveBootstrap: func(ctx context.Context) error { return errInit },
+			wantStart:     false,
 		},
 		{
-			name:        "background task faield",
-			bootstraps:  nil,
-			shouldStart: true,
-			background: [2]func(context.Context) error{
+			name:          "background task failed",
+			giveBootstrap: nil,
+			wantStart:     true,
+			giveBackground: [2]func(context.Context) error{
 				func(ctx context.Context) error {
 					<-time.After(200 * time.Millisecond)
 					return errTask
 				},
 				func(ctx context.Context) error { return nil },
 			},
-			err: errors.Join(errors.Join(errTask)),
+			wantErr: errors.Join(errors.Join(errTask)),
 		},
 		{
-			name:        "failed shutdown",
-			bootstraps:  nil,
-			shouldStart: true,
-			background: [2]func(context.Context) error{
+			name:          "failed shutdown",
+			giveBootstrap: nil,
+			wantStart:     true,
+			giveBackground: [2]func(context.Context) error{
 				func(ctx context.Context) error {
 					<-time.After(200 * time.Millisecond)
 					return nil
@@ -63,13 +62,13 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			err: errors.Join(errTask),
+			wantErr: errors.Join(errTask),
 		},
 		{
-			name:        "up and down failed",
-			bootstraps:  nil,
-			shouldStart: true,
-			background: [2]func(context.Context) error{
+			name:          "up and down failed",
+			giveBootstrap: nil,
+			wantStart:     true,
+			giveBackground: [2]func(context.Context) error{
 				func(ctx context.Context) error {
 					return errTask
 				},
@@ -77,13 +76,13 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			err: errors.Join(errors.Join(errTask), errTask),
+			wantErr: errors.Join(errors.Join(errTask), errTask),
 		},
 		{
-			name:        "up failed and down failed by timeout",
-			bootstraps:  nil,
-			shouldStart: true,
-			background: [2]func(context.Context) error{
+			name:          "up failed and down failed by timeout",
+			giveBootstrap: nil,
+			wantStart:     true,
+			giveBackground: [2]func(context.Context) error{
 				func(ctx context.Context) error {
 					return errTask
 				},
@@ -92,7 +91,7 @@ func TestSquad(t *testing.T) {
 					return errTask
 				},
 			},
-			err: errors.Join(errors.Join(errTask), context.DeadlineExceeded),
+			wantErr: errors.Join(errors.Join(errTask), context.DeadlineExceeded),
 		},
 	}
 
@@ -104,22 +103,32 @@ func TestSquad(t *testing.T) {
 
 			testGroup, err := squad.New(
 				squad.WithGracefulPeriod(100*time.Millisecond),
-				squad.WithBootstrap(tc.bootstraps),
+				squad.WithBootstrap(tc.giveBootstrap),
 			)
-			if tc.shouldStart {
-				assert.NoError(t, err)
+			if tc.wantStart {
+				if err != nil {
+					t.Errorf("New() error = %v, want nil", err)
+				}
 			} else {
-				assert.NotNil(t, err)
+				if err == nil {
+					t.Errorf("New() error = nil, want non-nil")
+				}
 				return
 			}
 
-			testGroup.RunGracefully(tc.background[0], tc.background[1])
+			testGroup.RunGracefully(tc.giveBackground[0], tc.giveBackground[1])
 
 			err = testGroup.Wait()
-			if tc.err != nil {
-				assert.EqualError(t, tc.err, err.Error())
-			} else {
-				assert.Nil(t, err)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Errorf("Wait() error = %v, want nil", err)
+				}
+
+				return
+			}
+
+			if diff := cmp.Diff(tc.wantErr.Error(), err.Error()); diff != "" {
+				t.Errorf("Wait() error mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
