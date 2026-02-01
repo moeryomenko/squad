@@ -41,6 +41,7 @@ const defaultContextGracePeriod = 30 * time.Second
 
 // Squad is a collection of goroutines that go up and running altogether.
 // If one goroutine exits, other goroutines also go down.
+// It provides graceful shutdown capabilities for a group of goroutines.
 type Squad struct {
 	// primitives for control running goroutines.
 	wg     *synx.CtxGroup
@@ -69,11 +70,13 @@ func New(opts ...Option) (*Squad, error) {
 		opt(squad)
 	}
 
-	squad.startSignalHandler()
-
-	if err := onStart(ctx, squad.bootstraps...); err != nil {
+	if err := runBootstrap(ctx, squad.bootstraps...); err != nil {
+		cancel() // Cancel context on bootstrap failure
 		return nil, err
 	}
+
+	// Start signal handler after successful bootstrap
+	squad.startSignalHandler()
 
 	return squad, nil
 }
@@ -86,6 +89,10 @@ func (s *Squad) Run(fn func(context.Context) error) {
 // RunGracefully runs the backgroundFn. When fn is done, it signals all group members to stop.
 // When stop signal has been received, squad run onDown function.
 func (s *Squad) RunGracefully(backgroundFn, onDown func(context.Context) error) {
+	if s == nil {
+		return
+	}
+
 	if onDown != nil {
 		s.shutdownFuncs = append(s.shutdownFuncs, onDown)
 	}
@@ -95,6 +102,10 @@ func (s *Squad) RunGracefully(backgroundFn, onDown func(context.Context) error) 
 
 // Wait blocks until all squad members exit.
 func (s *Squad) Wait() error {
+	if s == nil {
+		return nil
+	}
+
 	var err error
 
 	waitErr := s.wg.Wait()
@@ -111,6 +122,10 @@ func (s *Squad) Wait() error {
 }
 
 func (s *Squad) shutdown() error {
+	if s == nil {
+		return nil
+	}
+
 	if len(s.shutdownFuncs) == 0 {
 		return nil
 	}
@@ -120,9 +135,11 @@ func (s *Squad) shutdown() error {
 
 	group := synx.NewErrGroup(ctx)
 	for _, cancelFn := range s.shutdownFuncs {
-		group.Go(func(ctx context.Context) error {
-			return synx.CallWithContext(ctx, cancelFn)
-		})
+		if cancelFn != nil {
+			group.Go(func(ctx context.Context) error {
+				return synx.CallWithContext(ctx, cancelFn)
+			})
+		}
 	}
 
 	return group.Wait()
@@ -132,14 +149,17 @@ func (s *Squad) shutdown() error {
 // and handles graceful shutdown. On first signal, it cancels the context
 // to trigger graceful shutdown. On second signal, it forces exit.
 func (s *Squad) startSignalHandler() {
+	if s == nil || s.cancel == nil {
+		return
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 	go func() {
-		defer signal.Stop(sigChan)
-
 		select {
 		case <-sigChan:
+			// Safely cancel the context
 			s.cancel()
 		case <-s.ctx.Done():
 			return
@@ -155,7 +175,7 @@ func (s *Squad) startSignalHandler() {
 	}()
 }
 
-func onStart(ctx context.Context, bootstraps ...func(context.Context) error) error {
+func runBootstrap(ctx context.Context, bootstraps ...func(context.Context) error) error {
 	if len(bootstraps) == 0 {
 		return nil
 	}

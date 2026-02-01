@@ -28,7 +28,7 @@ func WithBootstrap(fns ...func(context.Context) error) Option {
 	}
 }
 
-// WithCloses is a Squad options that adds cleanup functions,
+// WithCloses is a Squad option that adds cleanup functions,
 // which will be executed after squad stopped.
 func WithCloses(fns ...func(context.Context) error) Option {
 	return func(s *Squad) {
@@ -36,7 +36,7 @@ func WithCloses(fns ...func(context.Context) error) Option {
 	}
 }
 
-// WithSubsystem is Squad option that add init and cleanup functions
+// WithSubsystem is Squad option that adds init and cleanup functions
 // for given subsystem will be executed before and after squad ran.
 func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
 	return func(s *Squad) {

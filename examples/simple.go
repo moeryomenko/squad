@@ -36,7 +36,21 @@ func main() {
 		}
 	})
 
-	s.RunServer(&http.Server{Addr: ":8080"})
+	server := &http.Server{Addr: ":8080"}
+
+	s.RunGracefully(func(ctx context.Context) error {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+		}
+
+		return nil
+	}, func(ctx context.Context) error {
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("HTTP server shutdown error: %v", err)
+		}
+
+		return nil
+	})
 
 	s.RunGracefully(func(ctx context.Context) error {
 		<-ctx.Done()
