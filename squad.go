@@ -27,6 +27,8 @@ package squad
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -98,6 +100,24 @@ func (s *Squad) RunGracefully(backgroundFn, onDown func(context.Context) error) 
 	}
 
 	s.wg.Go(backgroundFn)
+}
+
+func (s *Squad) RunServer(srv *http.Server) {
+	s.RunGracefully(func(ctx context.Context) error {
+		err := srv.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("listen server: %w", err)
+		}
+
+		return nil
+	}, func(ctx context.Context) error {
+		err := srv.Shutdown(ctx)
+		if err != nil {
+			return fmt.Errorf("shutdown server: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // Wait blocks until all squad members exit.
