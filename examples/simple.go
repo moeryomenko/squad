@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/moeryomenko/squad"
@@ -22,7 +23,7 @@ func main() {
 	}
 
 	http.HandleFunc(`/echo`, func(w http.ResponseWriter, r *http.Request) {
-		log.Printf(`handle request from: %s`, r.Header.Get(`User-Agent`))
+		log.Printf(`handle request from: %s`, sanitizeLogString(r.Header.Get(`User-Agent`)))
 
 		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
@@ -36,7 +37,10 @@ func main() {
 		}
 	})
 
-	s.RunServer(&http.Server{Addr: ":8080"})
+	s.RunServer(&http.Server{
+		Addr:              ":8080",
+		ReadHeaderTimeout: 30 * time.Second,
+	})
 
 	s.RunGracefully(func(ctx context.Context) error {
 		<-ctx.Done()
@@ -54,4 +58,14 @@ func main() {
 	if err := s.Wait(); err != nil {
 		log.Fatalf("service wait failed: %v", err)
 	}
+}
+
+// sanitizeLogString removes control characters from a string for safe logging.
+func sanitizeLogString(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\t' {
+			return -1
+		}
+		return r
+	}, s)
 }

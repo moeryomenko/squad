@@ -2,6 +2,7 @@ package squad
 
 import (
 	"context"
+	"os"
 	"time"
 )
 
@@ -42,5 +43,21 @@ func WithSubsystem(initFn, closeFn func(context.Context) error) Option {
 	return func(s *Squad) {
 		s.bootstraps = append(s.bootstraps, initFn)
 		s.shutdownFuncs = append(s.shutdownFuncs, closeFn)
+	}
+}
+
+// WithSignals overrides the default signal set used for signal.Notify.
+// When empty or nil, the defaults (SIGINT, SIGTERM, SIGHUP) are used.
+func WithSignals(sigs ...os.Signal) Option {
+	return func(s *Squad) {
+		s.signals = sigs
+	}
+}
+
+// WithSecondSignalHandler overrides the default second-signal behavior
+// (os.Exit(1)). When nil, the default os.Exit(1) is used.
+func WithSecondSignalHandler(fn func()) Option {
+	return func(s *Squad) {
+		s.secondSignal = fn
 	}
 }

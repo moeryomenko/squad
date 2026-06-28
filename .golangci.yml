@@ -7,8 +7,20 @@ run:
   allow-parallel-runners: false
 linters:
   enable:
+    - containedctx
+    - durationcheck
+    - errname
+    - errorlint
+    - gochecknoglobals
+    - gochecknoinits
+    - goconst
     - gocritic
     - gocyclo
+    - gosec
+    - loggercheck
+    - mirror
+    - nolintlint
+    - prealloc
   disable:
     - asciicheck
     - bodyclose
@@ -17,25 +29,18 @@ linters:
     - depguard
     - dogsled
     - dupl
-    - durationcheck
     - err113
-    - errname
-    - errorlint
     - exhaustive
     - forbidigo
     - forcetypeassert
     - funlen
-    - gochecknoglobals
-    - gochecknoinits
     - gocognit
-    - goconst
     - godot
     - godox
     - goheader
     - gomoddirectives
     - gomodguard
     - goprintffuncname
-    - gosec
     - importas
     - ireturn
     - lll
@@ -48,9 +53,7 @@ linters:
     - nilnil
     - nlreturn
     - noctx
-    - nolintlint
     - paralleltest
-    - prealloc
     - predeclared
     - promlinter
     - revive
@@ -90,6 +93,9 @@ linters:
     rules:
       - linters:
           - gocyclo
+        path: _test\.go
+      - linters:
+          - gosec
         path: _test\.go
     paths:
       - third_party$
